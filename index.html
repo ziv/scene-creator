@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Scene Creator</title>
+    <link rel="icon" href="/favicon.svg" />
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <main id="app">
+      <section id="viewport">
+        <div id="steady" class="badge">Loading…</div>
+      </section>
+
+      <section id="timeline">
+        <input id="timeSlider" type="range" min="0" max="1" step="0.05" value="0" disabled aria-label="Scene time" />
+        <div id="timeLabel">—</div>
+      </section>
+
+      <section id="controls">
+        <div class="row">
+          <label for="sceneType">Scene</label>
+          <select id="sceneType" class="grow"></select>
+        </div>
+        <div id="sceneDescription"></div>
+        <div id="pickHint"></div>
+
+        <div id="paramsForm"></div>
+
+        <div class="row">
+          <button id="resetBtn" type="button">Reset to defaults</button>
+          <button id="frameBtn" type="button">Frame scene</button>
+        </div>
+
+        <div id="summary"></div>
+        <div id="status">Loading…</div>
+      </section>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
