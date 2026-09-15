@@ -16,7 +16,7 @@ body {
   background: var(--bg);
   color: var(--text);
   font-family: system-ui, sans-serif;
-  font-size: 13px;
+  font-size: 12px;
 }
 
 #app {
@@ -74,13 +74,13 @@ body {
 /* ---- Timeline ---------------------------------------------------------- */
 #timeline {
   flex: 0 0 auto;
-  padding: 8px 12px;
+  padding: 6px 12px;
   background: var(--panel);
   border-top: 1px solid var(--border);
   border-bottom: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
 }
 #timeSlider {
   width: 100%;
@@ -88,7 +88,7 @@ body {
 }
 #timeLabel {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 11px;
   font-family: ui-monospace, Menlo, monospace;
   white-space: nowrap;
   overflow: hidden;
@@ -101,7 +101,7 @@ body {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 8px 12px;
+  padding: 6px 12px;
   background: var(--panel);
   border-bottom: 1px solid var(--border);
 }
@@ -110,7 +110,8 @@ body {
   border-color: #b71c1c;
   color: #fff;
   font-weight: 600;
-  padding: 6px 14px;
+  padding: 5px 14px;
+  font-size: 13px;
 }
 #recordBtn:hover:not(:disabled) {
   background: #d32f2f;
@@ -134,7 +135,7 @@ body {
 #recordStatus {
   flex: 1;
   min-width: 0;
-  font-size: 12px;
+  font-size: 11px;
   color: var(--muted);
   white-space: nowrap;
   overflow: hidden;
@@ -145,50 +146,113 @@ body {
   white-space: normal;
 }
 
-/* ---- Settings ---------------------------------------------------------- */
-details#settings {
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 8px 10px 10px;
-}
-details#settings summary {
-  cursor: pointer;
-  color: var(--muted);
-  user-select: none;
-}
-details#settings[open] summary {
-  margin-bottom: 8px;
-}
-#presets {
-  margin-bottom: 8px;
-}
-#presets button {
-  padding: 3px 8px;
-  font-size: 12px;
-}
-#renderInfo {
-  margin-top: 8px;
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.5;
-  white-space: pre-line;
-}
-
-/* ---- Controls ---------------------------------------------------------- */
-#controls {
-  flex: 0 1 auto;
-  max-height: 40vh;
-  overflow-y: auto;
-  padding: 12px;
+/* ---- Bottom: minimap + panel ------------------------------------------- */
+#bottom {
+  flex: 0 0 auto;
+  height: 42vh;
+  min-height: 260px;
+  display: flex;
   background: var(--panel);
+}
+#mapColumn {
+  flex: 0 0 360px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 6px;
+  padding: 8px;
+  border-right: 1px solid var(--border);
+  min-height: 0;
+}
+#placeSearch gmp-place-autocomplete {
+  display: block;
+  width: 100%;
+  border-radius: 4px;
+  overflow: hidden;
+}
+#minimap {
+  flex: 1 1 auto;
+  min-height: 0;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #000;
+}
+.map-footer {
+  justify-content: space-between;
+  flex-wrap: nowrap;
+}
+#pickHint {
+  color: var(--accent);
+  min-height: 1.3em;
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#fitMapBtn {
+  flex: 0 0 auto;
+}
+/* Minimap markers (advanced marker content). */
+.mm-marker {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  transform: translateY(6px);
+}
+.mm-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #fff;
+  text-shadow: 0 0 3px #000, 0 0 3px #000, 1px 1px 0 #000;
+  white-space: nowrap;
+}
+.mm-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid #111;
+  box-shadow: 0 0 2px #000;
+}
+.mm-camera {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #fff;
+  border: 2px solid #000;
+  transform: translateY(6px);
+}
+
+@media (max-width: 800px) {
+  #bottom {
+    flex-direction: column;
+    height: auto;
+    min-height: 0;
+  }
+  #mapColumn {
+    flex: 0 0 auto;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+  #minimap {
+    height: 220px;
+    flex: 0 0 220px;
+  }
+}
+
+/* ---- Panel ------------------------------------------------------------- */
+#controls {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-y: auto;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 .row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   flex-wrap: wrap;
 }
 .row label {
@@ -200,57 +264,119 @@ details#settings[open] summary {
 }
 #sceneDescription {
   color: var(--muted);
-  font-size: 12px;
-  line-height: 1.4;
-}
-#pickHint {
-  color: var(--accent);
-  min-height: 1.4em;
-  font-size: 12px;
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 #paramsForm {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 5px;
 }
-fieldset {
+
+/* Collapsible panels */
+details {
   border: 1px solid var(--border);
   border-radius: 6px;
-  padding: 8px 10px 10px;
-  margin: 0;
+  padding: 6px 8px 8px;
 }
-.point-header {
+details > summary {
+  cursor: pointer;
+  user-select: none;
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  align-items: baseline;
   gap: 8px;
+  min-width: 0;
+}
+details[open] > summary {
   margin-bottom: 6px;
 }
-.point-header .dot {
-  display: inline-block;
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  margin-right: 6px;
-  vertical-align: middle;
+.summary-title {
+  color: var(--text);
+  font-weight: 600;
 }
-.fields {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+.summary-info {
+  color: var(--muted);
+  font-size: 11px;
+  font-family: ui-monospace, Menlo, monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+details > :not(summary) {
+  margin-top: 5px;
+}
+details > summary + * {
+  margin-top: 0;
+}
+
+/* Compact point rows */
+.point-row {
+  display: flex;
+  align-items: center;
   gap: 6px;
+  min-width: 0;
 }
+.point-title {
+  flex: 0 0 110px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.point-title .dot {
+  flex: 0 0 auto;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+}
+label.inline {
+  flex: 1 1 0;
+  min-width: 90px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted);
+}
+label.inline .caption {
+  font-size: 10px;
+  flex: 0 0 auto;
+}
+label.inline input {
+  flex: 1 1 auto;
+  min-width: 60px;
+}
+label.inline .unit {
+  font-size: 10px;
+  flex: 0 0 auto;
+}
+button.pick {
+  flex: 0 0 auto;
+  font-size: 11px;
+  padding: 2px 8px;
+}
+
+/* Number / select grid */
 .number-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-  gap: 6px 10px;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 4px 8px;
 }
-.fields label,
 .number-grid label {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 10px;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 input[type='number'],
 select {
@@ -260,15 +386,16 @@ select {
   color: var(--text);
   border: 1px solid #444;
   border-radius: 4px;
-  padding: 4px 6px;
-  font-size: 13px;
+  padding: 2px 5px;
+  font-size: 12px;
+  height: 24px;
 }
 input[type='number'].invalid {
   border-color: var(--danger);
 }
 button {
-  font-size: 13px;
-  padding: 5px 12px;
+  font-size: 12px;
+  padding: 3px 9px;
   cursor: pointer;
   background: #2b2b2b;
   color: var(--text);
@@ -287,15 +414,27 @@ button.armed {
   color: #111;
   border-color: var(--accent);
 }
-#summary,
-#status {
-  font-size: 12px;
-  line-height: 1.5;
-  white-space: pre-line;
+
+/* Settings */
+#presets {
+  margin-bottom: 4px;
 }
+#presets button {
+  padding: 2px 7px;
+  font-size: 11px;
+}
+#renderInfo,
 #summary {
   color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: pre-line;
   font-family: ui-monospace, Menlo, monospace;
+}
+#status {
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: pre-line;
 }
 #status.error {
   color: var(--danger);

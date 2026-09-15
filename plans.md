@@ -15,3 +15,9 @@ Read the attached directory contain a simple Cesium app that do the same but sim
 ## Milestone 2
 
 - The app should contain a record button that convert the scene into a video
+
+## Milestone 3
+
+- Add minimap for picking points and show the path.
+- Make all forms denser (compact)
+- Path details should be collapsable like the video output

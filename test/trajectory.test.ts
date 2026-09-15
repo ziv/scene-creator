@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { aheadPose, constantSpeedTrajectory, lookAtPose } from '../src/geo/trajectory';
+import { aheadPose, cameraPosition, constantSpeedTrajectory, lookAtPose, sampleTrack } from '../src/geo/trajectory';
 import { distance, fromEnu, toEcef } from '../src/geo/wgs84';
 import type { CameraPose, Vec3 } from '../src/geo/types';
 
@@ -121,5 +121,49 @@ describe('aheadPose', () => {
     expect(check.heading).toBeCloseTo(pose.heading, 1);
     expect(check.tilt).toBeCloseTo(pose.tilt, 1);
     expect(check.range).toBeCloseTo(pose.range, 3);
+  });
+});
+
+describe('cameraPosition', () => {
+  const close = (a: { x: number; y: number; z: number }, b: { x: number; y: number; z: number }) =>
+    expect(distance(a, b)).toBeLessThan(0.01);
+
+  it('inverts lookAtPose', () => {
+    for (const [e, n, u] of [
+      [0, 0, 500],
+      [0, -1000, 0],
+      [300, 400, 500],
+      [-1200, 800, 150],
+    ] as const) {
+      const p = fromEnu(origin, e, n, u);
+      close(toEcef(cameraPosition(lookAtPose(p, origin))), p);
+    }
+  });
+
+  it('inverts aheadPose to within the ENU-frame drift over the look-ahead distance', () => {
+    // aheadPose works in the camera's frame and cameraPosition in the centre's; the frames
+    // differ by ~0.01° over 1.5 km, which moves the answer by a few tens of centimetres.
+    expect(distance(toEcef(cameraPosition(aheadPose(origin, 30, -20, 800))), origin)).toBeLessThan(0.5);
+    expect(distance(toEcef(cameraPosition(aheadPose(origin, 250, -60, 1500))), origin)).toBeLessThan(1);
+  });
+});
+
+describe('sampleTrack', () => {
+  const scene = {
+    duration: 8,
+    poseAt: (t: number) => ({ center: { lat: 0, lng: t, alt: 0 }, range: 1, heading: 0, tilt: 0, roll: 0 }),
+  };
+
+  it('samples evenly in time with both ends included', () => {
+    const calls: number[] = [];
+    const track = sampleTrack({ duration: 8, poseAt: (t) => (calls.push(t), scene.poseAt(t)) }, 5);
+    expect(calls).toEqual([0, 2, 4, 6, 8]);
+    expect(track).toHaveLength(5);
+  });
+
+  it('returns only the start for a single sample', () => {
+    const calls: number[] = [];
+    sampleTrack({ duration: 8, poseAt: (t) => (calls.push(t), scene.poseAt(t)) }, 1);
+    expect(calls).toEqual([0]);
   });
 });

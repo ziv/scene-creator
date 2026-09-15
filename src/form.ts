@@ -16,6 +16,11 @@ export interface FormHandle {
   destroy(): void;
 }
 
+/** Short point label: "Centre (camera target)" → "Centre", "Start point" → "Start", "Camera target" → "Target". */
+export function shortPointLabel(label: string): string {
+  return label.replace(/\s*\(.*\)$/, '').replace(/\s+point$/i, '').replace(/^camera target$/i, 'Target');
+}
+
 /**
  * Renders a segment's parameter form from its field schema and keeps `params`
  * in sync with the inputs. Edits are written straight into `params`.
@@ -66,41 +71,64 @@ export function renderForm(root: HTMLElement, fields: ParamField[], params: Para
     });
   };
 
+  /** One compact row: ● label  Lat [ ]  Lng [ ]  Height [ ] m  [Pick] */
   const renderPoint = (field: PointField) => {
-    const fieldset = document.createElement('fieldset');
-    const header = document.createElement('div');
-    header.className = 'point-header';
-    const title = document.createElement('strong');
+    const row = document.createElement('div');
+    row.className = 'point-row';
+
+    const title = document.createElement('span');
+    title.className = 'point-title';
+    title.title = field.label;
     const dot = document.createElement('span');
     dot.className = 'dot';
     dot.style.background = field.color;
-    title.append(dot, field.label);
-    const pick = document.createElement('button');
-    pick.type = 'button';
-    pick.textContent = 'Pick in view';
-    pick.addEventListener('click', () => hooks.onPick(field.key));
-    pickButtons.set(field.key, pick);
-    controls.push(pick);
-    header.append(title, pick);
+    title.append(dot, shortPointLabel(field.label));
 
-    const grid = document.createElement('div');
-    grid.className = 'fields';
+    const inline = (caption: string, input: HTMLInputElement, unit?: string, tooltip?: string): HTMLLabelElement => {
+      const label = document.createElement('label');
+      label.className = 'inline';
+      if (tooltip) label.title = tooltip;
+      const cap = document.createElement('span');
+      cap.className = 'caption';
+      cap.textContent = caption;
+      label.append(cap, input);
+      if (unit) {
+        const u = document.createElement('span');
+        u.className = 'unit';
+        u.textContent = unit;
+        label.append(u);
+      }
+      return label;
+    };
+
     const lat = numberInput(0.0001, -90, 90);
     const lng = numberInput(0.0001, -180, 180);
     const height = numberInput(10);
-    grid.append(
-      labelled('Latitude', lat),
-      labelled('Longitude', lng),
-      labelled(`${field.heightLabel ?? 'Height above ground'} (m)`, height),
+    const heightLabel = field.heightLabel ?? 'Height above ground';
+
+    const pick = document.createElement('button');
+    pick.type = 'button';
+    pick.className = 'pick';
+    pick.textContent = 'Pick';
+    pick.title = `Place ${field.label} by clicking the map or the 3D view`;
+    pick.addEventListener('click', () => hooks.onPick(field.key));
+    pickButtons.set(field.key, pick);
+    controls.push(pick);
+
+    row.append(
+      title,
+      inline('Lat', lat, undefined, 'Latitude'),
+      inline('Lng', lng, undefined, 'Longitude'),
+      inline('Height', height, 'm', `${heightLabel} (m)`),
+      pick,
     );
-    fieldset.append(header, grid);
 
     const point = () => params[field.key] as Waypoint;
     const fixed = (v: number) => v.toFixed(5);
     bindNumber(lat, -90, 90, () => point().lat, (v) => (point().lat = v), fixed);
     bindNumber(lng, -180, 180, () => point().lng, (v) => (point().lng = v), fixed);
     bindNumber(height, -10_000, 100_000, () => point().height, (v) => (point().height = v));
-    return fieldset;
+    return row;
   };
 
   const numberRows = document.createElement('div');
@@ -118,7 +146,9 @@ export function renderForm(root: HTMLElement, fields: ParamField[], params: Para
         () => params[field.key] as number,
         (v) => (params[field.key] = v),
       );
-      numberRows.append(labelled(field.unit ? `${field.label} (${field.unit})` : field.label, input));
+      const l = labelled(field.unit ? `${field.label} (${field.unit})` : field.label, input);
+      l.title = field.unit ? `${field.label} (${field.unit})` : field.label;
+      numberRows.append(l);
     } else {
       const select = document.createElement('select');
       for (const opt of field.options) {

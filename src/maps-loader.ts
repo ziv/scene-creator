@@ -11,6 +11,12 @@ export function readApiKey(): string | undefined {
   return key && key.trim() !== '' ? key.trim() : undefined;
 }
 
+/** Map ID for advanced markers on the 2D minimap; Google's demo ID when not configured. */
+export function readMapId(): string {
+  const id = import.meta.env.VITE_GOOGLE_MAPS_MAP_ID as string | undefined;
+  return id && id.trim() !== '' ? id.trim() : 'DEMO_MAP_ID';
+}
+
 let loaded: Promise<void> | null = null;
 
 /** Injects the loader once. Resolves when `google.maps.importLibrary` is callable. */

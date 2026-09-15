@@ -28,33 +28,44 @@
         <div id="recordStatus"></div>
       </section>
 
-      <section id="controls">
-        <div class="row">
-          <label for="sceneType">Scene</label>
-          <select id="sceneType" class="grow"></select>
-        </div>
-        <div id="sceneDescription"></div>
-        <div id="pickHint"></div>
-
-        <div id="paramsForm"></div>
-
-        <div class="row">
-          <button id="resetBtn" type="button">Reset to defaults</button>
-          <button id="frameBtn" type="button">Frame scene</button>
-        </div>
-
-        <details id="settings">
-          <summary>Output &amp; quality</summary>
-          <div id="presets" class="row"></div>
-          <div id="settingsForm"></div>
-          <div class="row" style="margin-top: 8px">
-            <button id="resetSettingsBtn" type="button">Reset to defaults</button>
+      <section id="bottom">
+        <div id="mapColumn">
+          <div id="placeSearch"></div>
+          <div id="minimap"></div>
+          <div class="row map-footer">
+            <div id="pickHint"></div>
+            <button id="fitMapBtn" type="button">Fit map</button>
           </div>
-          <div id="renderInfo"></div>
-        </details>
+        </div>
 
-        <div id="summary"></div>
-        <div id="status">Loading…</div>
+        <section id="controls">
+          <details id="pathPanel" open>
+            <summary><span class="summary-title">Path</span><span id="pathSummary" class="summary-info"></span></summary>
+            <div class="row">
+              <label for="sceneType">Scene</label>
+              <select id="sceneType" class="grow"></select>
+            </div>
+            <div id="sceneDescription"></div>
+            <div id="paramsForm"></div>
+            <div class="row">
+              <button id="resetBtn" type="button">Reset to defaults</button>
+              <button id="frameBtn" type="button">Frame scene</button>
+            </div>
+            <div id="summary"></div>
+          </details>
+
+          <details id="settings">
+            <summary><span class="summary-title">Output &amp; quality</span><span id="settingsSummary" class="summary-info"></span></summary>
+            <div id="presets" class="row"></div>
+            <div id="settingsForm"></div>
+            <div class="row" style="margin-top: 6px">
+              <button id="resetSettingsBtn" type="button">Reset to defaults</button>
+            </div>
+            <div id="renderInfo"></div>
+          </details>
+
+          <div id="status">Loading…</div>
+        </section>
       </section>
     </main>
     <script type="module" src="/src/main.ts"></script>

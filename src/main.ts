@@ -1,9 +1,12 @@
 // Hooks must be installed before the Maps API loads (see hooks.ts).
 import './hooks';
-import { loadMapsApi, readApiKey } from './maps-loader';
+import { loadMapsApi, readApiKey, readMapId } from './maps-loader';
+import { createMinimap } from './minimap';
+import { cameraPosition, sampleTrack } from './geo/trajectory';
+import { loadUiState, saveUiState } from './ui-state';
 import { createViewport, type Viewport } from './viewport';
 import { createGroundSampler } from './elevation';
-import { renderForm, type FormHandle } from './form';
+import { renderForm, shortPointLabel, type FormHandle } from './form';
 import { defaultDocument, defaultSegment, load, save } from './storage';
 import {
   applyParams,
@@ -51,6 +54,13 @@ const pickHint = $<HTMLDivElement>('pickHint');
 const paramsForm = $<HTMLDivElement>('paramsForm');
 const resetBtn = $<HTMLButtonElement>('resetBtn');
 const frameBtn = $<HTMLButtonElement>('frameBtn');
+const minimapEl = $<HTMLDivElement>('minimap');
+const placeSearchEl = $<HTMLDivElement>('placeSearch');
+const fitMapBtn = $<HTMLButtonElement>('fitMapBtn');
+const pathPanel = $<HTMLDetailsElement>('pathPanel');
+const pathSummary = $<HTMLSpanElement>('pathSummary');
+const settingsPanel = $<HTMLDetailsElement>('settings');
+const settingsSummary = $<HTMLSpanElement>('settingsSummary');
 const presetsEl = $<HTMLDivElement>('presets');
 const settingsForm = $<HTMLDivElement>('settingsForm');
 const resetSettingsBtn = $<HTMLButtonElement>('resetSettingsBtn');
@@ -61,6 +71,9 @@ const statusEl = $<HTMLDivElement>('status');
 const REBUILD_DEBOUNCE_MS = 250;
 const UNSTEADY_GRACE_MS = 150;
 const INTERNALS_TIMEOUT_MS = 5000;
+const TRACK_SAMPLES = 128;
+
+
 
 function setStatus(text: string, isError = false): void {
   statusEl.textContent = text;
@@ -164,11 +177,24 @@ async function main(): Promise<void> {
   };
   watchDpr();
 
-  const [viewport, sampleGround, logo] = await Promise.all([
+  const [viewport, sampleGround, logo, minimap] = await Promise.all([
     createViewport(stageEl),
     createGroundSampler(),
     loadImage('/google-maps-logo.svg'),
+    createMinimap(minimapEl, placeSearchEl, {
+      mapId: readMapId(),
+      onPick: (key, lat, lng) => placePoint(key, lat, lng, true),
+      onDrag: (key, lat, lng) => placePoint(key, lat, lng, false),
+    }),
   ]);
+
+  // ---- Collapsible panels ---------------------------------------------------
+  const uiState = loadUiState();
+  pathPanel.open = uiState.pathOpen;
+  settingsPanel.open = uiState.settingsOpen;
+  const persistUi = () => saveUiState({ pathOpen: pathPanel.open, settingsOpen: settingsPanel.open });
+  pathPanel.addEventListener('toggle', persistUi);
+  settingsPanel.addEventListener('toggle', persistUi);
 
   viewport.onSteadyChange((steady) => {
     steadyBadge.textContent = steady ? 'Ready' : 'Loading tiles…';
@@ -190,6 +216,9 @@ async function main(): Promise<void> {
   let armed: string | null = null;
   let recording = false;
   let settingsValid = true;
+  /** Fit the minimap once the next trajectory is built (so the track is included). */
+  let fitAfterBuild = true;
+  let hintTimer: number | undefined;
   /** Measured seconds per frame from the last recording of the session; 0.5 s until then. */
   let secondsPerFrame = 0.5;
 
@@ -203,30 +232,55 @@ async function main(): Promise<void> {
     sceneSelect.append(option);
   }
 
-  // ---- Picking via the 3D view ---------------------------------------------
-  function setArmed(next: string | null): void {
+  // ---- Picking (minimap or 3D view) ----------------------------------------
+  function setArmed(next: string | null, hint?: string): void {
     armed = next;
     form?.setArmed(next);
+    minimap.setArmed(next);
+    window.clearTimeout(hintTimer);
     const field = next ? pointFields(type).find((f) => f.key === next) : undefined;
-    pickHint.textContent = field ? `Click the 3D view to place: ${field.label}.` : '';
+    pickHint.textContent = field ? `Click the map to place: ${field.label}.` : hint ?? '';
+    if (!field && hint) hintTimer = window.setTimeout(() => (pickHint.textContent = ''), 3000);
+  }
+
+  function syncMarkers(): void {
+    minimap.setMarkers(
+      pointFields(type).map((f) => {
+        const w = segment.params[f.key] as Waypoint;
+        return { key: f.key, label: shortPointLabel(f.label), color: f.color, lat: w.lat, lng: w.lng };
+      }),
+    );
+  }
+
+  /** Writes a picked or dragged location into a point; `advance` arms the next point of the segment. */
+  function placePoint(key: string, lat: number, lng: number, advance: boolean): void {
+    if (recording) return;
+    const point = segment.params[key] as Waypoint | undefined;
+    if (!point) return;
+    point.lat = lat;
+    point.lng = lng;
+    form?.refresh();
+    syncMarkers();
+    persist();
+    scheduleRebuild();
+    if (advance) {
+      const keys = pointFields(type).map((f) => f.key);
+      const next = keys[keys.indexOf(key) + 1] ?? null;
+      setArmed(next, next ? undefined : 'Drag markers or use Pick to adjust.');
+    }
   }
 
   viewport.onClick((p) => {
-    if (!armed || recording) return;
-    const point = segment.params[armed] as Waypoint;
-    point.lat = p.lat;
-    point.lng = p.lng;
-    form?.refresh();
-    setArmed(null);
-    persist();
-    scheduleRebuild();
+    if (armed) placePoint(armed, p.lat, p.lng, true);
   });
+  fitMapBtn.addEventListener('click', () => minimap.fitAll());
 
   // ---- Scene form -----------------------------------------------------------
   function mountSegment(): void {
     type = getSegmentType(segment.type);
     sceneSelect.value = type.id;
     sceneDescription.textContent = type.description;
+    sceneDescription.title = type.description;
     form?.destroy();
     form = renderForm(paramsForm, type.fields, segment.params, {
       onChange(valid) {
@@ -237,6 +291,7 @@ async function main(): Promise<void> {
           setStatus('Fix the highlighted fields.', true);
           return;
         }
+        syncMarkers();
         persist();
         scheduleRebuild();
       },
@@ -244,7 +299,10 @@ async function main(): Promise<void> {
         setArmed(armed === key ? null : key);
       },
     });
-    setArmed(null);
+    syncMarkers();
+    minimap.setTrack([]);
+    setArmed(pointFields(type)[0]?.key ?? null);
+    fitAfterBuild = true;
     persist();
   }
 
@@ -296,12 +354,18 @@ async function main(): Promise<void> {
     });
   let settingsForm_ = mountSettingsForm();
 
+  function renderSettingsSummary(): void {
+    settingsSummary.textContent = `${settings.video.width}×${settings.video.height} · ${settings.video.fps} fps`;
+  }
+  renderSettingsSummary();
+
   function applyCurrentSettings(): void {
     applyParams(settingsParams, settings);
     settingsForm_.refresh(); // shows rounded (even) sizes
     saveSettings(settings);
     fitStage();
     renderInfoLine();
+    renderSettingsSummary();
     setRecordStatus('');
     updateRecordButton();
   }
@@ -390,10 +454,16 @@ async function main(): Promise<void> {
       timeSlider.max = String(built.duration);
       timeSlider.value = String(fraction * built.duration);
       timeSlider.disabled = false;
+      minimap.setTrack(sampleTrack(built, TRACK_SAMPLES));
+      if (fitAfterBuild) {
+        minimap.fitAll();
+        fitAfterBuild = false;
+      }
       showTime(Number(timeSlider.value));
       renderSummary();
       renderInfoLine();
       updateRecordButton();
+      pathSummary.textContent = `${type.name} · ${built.duration.toFixed(1)} s · ${(built.length / 1000).toFixed(1)} km`;
       if (sampleGround.fallbackReason) setStatus(`Ready (with a caveat). ${sampleGround.fallbackReason}`, true);
       else setStatus('Ready.');
     } catch (err) {
@@ -401,6 +471,9 @@ async function main(): Promise<void> {
       compiled = null;
       summaryEl.textContent = '';
       timeLabel.textContent = '—';
+      minimap.setTrack([]);
+      minimap.setCamera(null);
+      pathSummary.textContent = `${type.name} · invalid`;
       updateRecordButton();
       setStatus(`Invalid scene: ${err instanceof Error ? err.message : String(err)}`, true);
     }
@@ -422,7 +495,9 @@ async function main(): Promise<void> {
   // ---- Timeline -------------------------------------------------------------
   function showTime(t: number): void {
     if (!compiled) return;
-    viewport.setPose(compiled.poseAt(t));
+    const pose = compiled.poseAt(t);
+    viewport.setPose(pose);
+    minimap.setCamera(cameraPosition(pose));
     const { index } = compiled.locate(t);
     const name = getSegmentType(compiled.segments[index].segment.type).id;
     timeLabel.textContent =
@@ -454,7 +529,8 @@ async function main(): Promise<void> {
   function setEditingEnabled(enabled: boolean): void {
     form?.setEnabled(enabled);
     settingsForm_.setEnabled(enabled);
-    for (const el of [sceneSelect, timeSlider, resetBtn, frameBtn, resetSettingsBtn]) el.disabled = !enabled;
+    for (const el of [sceneSelect, timeSlider, resetBtn, frameBtn, resetSettingsBtn, fitMapBtn]) el.disabled = !enabled;
+    minimap.setEnabled(enabled);
     for (const el of presetsEl.querySelectorAll('button')) el.disabled = !enabled;
     stageShield.hidden = enabled;
     viewport.setInteractive(enabled);
@@ -580,7 +656,7 @@ async function main(): Promise<void> {
   });
 
   // Debugging access from the browser console.
-  Object.assign(window, { viewport, doc, settings, internals, readAttribution });
+  Object.assign(window, { viewport, minimap, doc, settings, internals, readAttribution });
 
   await rebuild();
 }

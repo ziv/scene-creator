@@ -1,5 +1,5 @@
-import type { CameraPose, Vec3 } from './types';
-import { distance, fromEnu, normalizeHeading, toDegrees, toEnu, toGeodetic, toRadians } from './wgs84';
+import type { CameraPose, Geodetic, Vec3 } from './types';
+import { distance, fromEnu, normalizeHeading, toDegrees, toEcef, toEnu, toGeodetic, toRadians } from './wgs84';
 
 export interface CurveSpec {
   /** Position along the curve for u in [0, 1]; any parametrisation. */
@@ -105,4 +105,26 @@ export function aheadPose(position: Vec3, headingDeg: number, pitchDeg: number, 
     tilt: 90 + pitchDeg,
     roll: 0,
   };
+}
+
+/**
+ * Camera location for a pose: `range` metres from the centre, on the side
+ * opposite the view heading, raised by the tilt (tilt 0 = straight above).
+ */
+export function cameraPosition(pose: CameraPose): Geodetic {
+  const tilt = toRadians(pose.tilt);
+  const back = toRadians(pose.heading + 180);
+  const horizontal = pose.range * Math.sin(tilt);
+  const vertical = pose.range * Math.cos(tilt);
+  const origin = toEcef(pose.center);
+  return toGeodetic(fromEnu(origin, horizontal * Math.sin(back), horizontal * Math.cos(back), vertical));
+}
+
+/** `count` camera ground positions evenly spaced in time over the scene, both ends included. */
+export function sampleTrack(
+  scene: { duration: number; poseAt(t: number): CameraPose },
+  count: number,
+): Geodetic[] {
+  const n = Math.max(1, Math.floor(count));
+  return Array.from({ length: n }, (_, i) => cameraPosition(scene.poseAt(n === 1 ? 0 : (i / (n - 1)) * scene.duration)));
 }
