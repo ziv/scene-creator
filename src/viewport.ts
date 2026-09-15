@@ -12,6 +12,15 @@ export interface Viewport {
   /** Fires when the map reports an error. Returns an unsubscribe function. */
   onError(handler: (message: string) => void): () => void;
   isSteady(): boolean;
+  /** Blocks user gestures on the map while recording. */
+  setInteractive(enabled: boolean): void;
+  /**
+   * Sets the pose, then waits for the map to be steady for it:
+   * - if a gmp-steadychange(false) arrives within `unsteadyGraceMs`, wait for the following (true);
+   * - otherwise assume nothing needed loading and resolve after the grace period.
+   * Resolves true if steady was reached, false on timeout. Rejects only on abort.
+   */
+  setPoseAndSettle(pose: CameraPose, opts: { unsteadyGraceMs: number; timeoutMs: number; signal: AbortSignal }): Promise<boolean>;
 }
 
 const EPS = 1e-6;
@@ -36,17 +45,64 @@ export async function createViewport(container: HTMLElement): Promise<Viewport> 
     steady = (event as google.maps.maps3d.SteadyChangeEvent).isSteady;
   });
 
+  const setPose = (pose: CameraPose): void => {
+    const c = element.center;
+    if (!c || differs(c.lat, pose.center.lat) || differs(c.lng, pose.center.lng) || differs(c.altitude, pose.center.alt)) {
+      element.center = { lat: pose.center.lat, lng: pose.center.lng, altitude: pose.center.alt };
+    }
+    if (differs(element.range, pose.range)) element.range = pose.range;
+    if (differs(element.heading, pose.heading)) element.heading = pose.heading;
+    if (differs(element.tilt, pose.tilt)) element.tilt = pose.tilt;
+    if (differs(element.roll, pose.roll)) element.roll = pose.roll;
+  };
+
   return {
     element,
-    setPose(pose) {
-      const c = element.center;
-      if (!c || differs(c.lat, pose.center.lat) || differs(c.lng, pose.center.lng) || differs(c.altitude, pose.center.alt)) {
-        element.center = { lat: pose.center.lat, lng: pose.center.lng, altitude: pose.center.alt };
-      }
-      if (differs(element.range, pose.range)) element.range = pose.range;
-      if (differs(element.heading, pose.heading)) element.heading = pose.heading;
-      if (differs(element.tilt, pose.tilt)) element.tilt = pose.tilt;
-      if (differs(element.roll, pose.roll)) element.roll = pose.roll;
+    setPose,
+    setInteractive(enabled) {
+      element.style.pointerEvents = enabled ? '' : 'none';
+    },
+    setPoseAndSettle(pose, opts) {
+      return new Promise<boolean>((resolve, reject) => {
+        if (opts.signal.aborted) return reject(new DOMException('Aborted', 'AbortError'));
+        // If the map is already busy, the next steady(true) is the one we want.
+        let sawUnsteady = !steady;
+        let done = false;
+        const finish = (value: boolean) => {
+          if (done) return;
+          done = true;
+          cleanup();
+          resolve(value);
+        };
+        const onChange = (event: Event) => {
+          const isSteady = (event as google.maps.maps3d.SteadyChangeEvent).isSteady;
+          if (!isSteady) {
+            sawUnsteady = true;
+            window.clearTimeout(grace);
+          } else if (sawUnsteady) {
+            finish(true);
+          }
+        };
+        const onAbort = () => {
+          if (done) return;
+          done = true;
+          cleanup();
+          reject(new DOMException('Aborted', 'AbortError'));
+        };
+        const grace = window.setTimeout(() => {
+          if (!sawUnsteady) finish(true);
+        }, opts.unsteadyGraceMs);
+        const timeout = window.setTimeout(() => finish(false), opts.timeoutMs);
+        const cleanup = () => {
+          element.removeEventListener('gmp-steadychange', onChange);
+          opts.signal.removeEventListener('abort', onAbort);
+          window.clearTimeout(grace);
+          window.clearTimeout(timeout);
+        };
+        element.addEventListener('gmp-steadychange', onChange);
+        opts.signal.addEventListener('abort', onAbort, { once: true });
+        setPose(pose);
+      });
     },
     whenSteady(signal) {
       if (steady) return Promise.resolve();

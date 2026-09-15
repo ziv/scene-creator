@@ -10,12 +10,22 @@
   <body>
     <main id="app">
       <section id="viewport">
-        <div id="steady" class="badge">Loading…</div>
+        <div id="stage">
+          <div id="steady" class="badge">Loading…</div>
+          <div id="stageShield" hidden></div>
+        </div>
       </section>
 
       <section id="timeline">
         <input id="timeSlider" type="range" min="0" max="1" step="0.05" value="0" disabled aria-label="Scene time" />
         <div id="timeLabel">—</div>
+      </section>
+
+      <section id="recordRow">
+        <button id="recordBtn" type="button" disabled>● Record</button>
+        <button id="cancelBtn" type="button" hidden>Cancel</button>
+        <div id="progressBar" hidden><div id="progressFill"></div></div>
+        <div id="recordStatus"></div>
       </section>
 
       <section id="controls">
@@ -32,6 +42,16 @@
           <button id="resetBtn" type="button">Reset to defaults</button>
           <button id="frameBtn" type="button">Frame scene</button>
         </div>
+
+        <details id="settings">
+          <summary>Output &amp; quality</summary>
+          <div id="presets" class="row"></div>
+          <div id="settingsForm"></div>
+          <div class="row" style="margin-top: 8px">
+            <button id="resetSettingsBtn" type="button">Reset to defaults</button>
+          </div>
+          <div id="renderInfo"></div>
+        </details>
 
         <div id="summary"></div>
         <div id="status">Loading…</div>

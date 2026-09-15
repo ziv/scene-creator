@@ -1,8 +1,25 @@
+// Hooks must be installed before the Maps API loads (see hooks.ts).
+import './hooks';
 import { loadMapsApi, readApiKey } from './maps-loader';
 import { createViewport, type Viewport } from './viewport';
 import { createGroundSampler } from './elevation';
 import { renderForm, type FormHandle } from './form';
 import { defaultDocument, defaultSegment, load, save } from './storage';
+import {
+  applyParams,
+  loadSettings,
+  presets,
+  saveSettings,
+  settingsFields,
+  settingsToParams,
+  defaultSettings,
+  type RecordingSettings,
+} from './settings';
+import { applyStage, layoutStage } from './stage';
+import { attributionLine, drawAttribution, readAttribution } from './attribution';
+import { Mp4Encoder } from './encoder';
+import { planFrames, recordFrames, RecordingCancelled, type RecordProgress } from './recorder';
+import { detectInternals, detectSupport, internals } from './support';
 import {
   compile,
   getSegmentType,
@@ -18,27 +35,98 @@ import {
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
 const viewportEl = $<HTMLElement>('viewport');
+const stageEl = $<HTMLDivElement>('stage');
+const stageShield = $<HTMLDivElement>('stageShield');
 const steadyBadge = $<HTMLDivElement>('steady');
 const timeSlider = $<HTMLInputElement>('timeSlider');
 const timeLabel = $<HTMLDivElement>('timeLabel');
+const recordBtn = $<HTMLButtonElement>('recordBtn');
+const cancelBtn = $<HTMLButtonElement>('cancelBtn');
+const progressBar = $<HTMLDivElement>('progressBar');
+const progressFill = $<HTMLDivElement>('progressFill');
+const recordStatus = $<HTMLDivElement>('recordStatus');
 const sceneSelect = $<HTMLSelectElement>('sceneType');
 const sceneDescription = $<HTMLDivElement>('sceneDescription');
 const pickHint = $<HTMLDivElement>('pickHint');
 const paramsForm = $<HTMLDivElement>('paramsForm');
 const resetBtn = $<HTMLButtonElement>('resetBtn');
 const frameBtn = $<HTMLButtonElement>('frameBtn');
+const presetsEl = $<HTMLDivElement>('presets');
+const settingsForm = $<HTMLDivElement>('settingsForm');
+const resetSettingsBtn = $<HTMLButtonElement>('resetSettingsBtn');
+const renderInfo = $<HTMLDivElement>('renderInfo');
 const summaryEl = $<HTMLDivElement>('summary');
 const statusEl = $<HTMLDivElement>('status');
 
 const REBUILD_DEBOUNCE_MS = 250;
+const UNSTEADY_GRACE_MS = 150;
+const INTERNALS_TIMEOUT_MS = 5000;
 
 function setStatus(text: string, isError = false): void {
   statusEl.textContent = text;
   statusEl.classList.toggle('error', isError);
 }
 
+function setRecordStatus(text: string, isError = false): void {
+  recordStatus.textContent = text;
+  recordStatus.classList.toggle('error', isError);
+}
+
 function pointFields(type: SegmentType): PointField[] {
   return type.fields.filter((f): f is PointField => f.kind === 'point');
+}
+
+function formatEta(seconds: number | null): string {
+  if (seconds === null) return '';
+  const m = Math.floor(seconds / 60);
+  const s = Math.round(seconds % 60);
+  return ` — ETA ${m}:${String(s).padStart(2, '0')}`;
+}
+
+function formatDuration(seconds: number): string {
+  if (seconds < 90) return `${Math.round(seconds)} s`;
+  return `${Math.round(seconds / 60)} min`;
+}
+
+function slug(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'scene';
+}
+
+function downloadBlob(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function loadImage(src: string): Promise<HTMLImageElement | null> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => resolve(null);
+    img.src = src;
+  });
+}
+
+/** Waits `count` animation frames; rejects on abort. */
+function waitFrames(count: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    let left = count;
+    const onAbort = () => reject(new DOMException('Aborted', 'AbortError'));
+    signal.addEventListener('abort', onAbort, { once: true });
+    const tick = () => {
+      if (signal.aborted) return;
+      if (--left <= 0) {
+        signal.removeEventListener('abort', onAbort);
+        resolve();
+      } else {
+        requestAnimationFrame(tick);
+      }
+    };
+    requestAnimationFrame(tick);
+  });
 }
 
 async function main(): Promise<void> {
@@ -50,11 +138,42 @@ async function main(): Promise<void> {
     return;
   }
   await loadMapsApi(key);
-  const [viewport, sampleGround] = await Promise.all([createViewport(viewportEl), createGroundSampler()]);
+
+  // ---- Settings & stage (before the map exists, so it is created at the right size) --
+  const settings: RecordingSettings = loadSettings();
+  let settingsParams: Params = settingsToParams(settings);
+
+  function fitStage(): void {
+    const layout = layoutStage(
+      settings.video.width,
+      settings.video.height,
+      window.devicePixelRatio || 1,
+      viewportEl.clientWidth,
+      viewportEl.clientHeight,
+    );
+    applyStage(stageEl, layout);
+  }
+  fitStage();
+  window.addEventListener('resize', fitStage);
+  const watchDpr = () => {
+    const mq = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
+    mq.addEventListener('change', () => {
+      fitStage();
+      watchDpr();
+    }, { once: true });
+  };
+  watchDpr();
+
+  const [viewport, sampleGround, logo] = await Promise.all([
+    createViewport(stageEl),
+    createGroundSampler(),
+    loadImage('/google-maps-logo.svg'),
+  ]);
 
   viewport.onSteadyChange((steady) => {
     steadyBadge.textContent = steady ? 'Ready' : 'Loading tiles…';
     steadyBadge.classList.toggle('ready', steady);
+    if (steady) renderInfoLine(); // the canvas has taken its new size by now
   });
   viewport.onError((message) => setStatus(`Map error: ${message}`, true));
 
@@ -69,6 +188,10 @@ async function main(): Promise<void> {
   let compiled: CompiledScene | null = null;
   let form: FormHandle | null = null;
   let armed: string | null = null;
+  let recording = false;
+  let settingsValid = true;
+  /** Measured seconds per frame from the last recording of the session; 0.5 s until then. */
+  let secondsPerFrame = 0.5;
 
   const persist = () => save(doc);
 
@@ -89,7 +212,7 @@ async function main(): Promise<void> {
   }
 
   viewport.onClick((p) => {
-    if (!armed) return;
+    if (!armed || recording) return;
     const point = segment.params[armed] as Waypoint;
     point.lat = p.lat;
     point.lng = p.lng;
@@ -99,7 +222,7 @@ async function main(): Promise<void> {
     scheduleRebuild();
   });
 
-  // ---- Form -----------------------------------------------------------------
+  // ---- Scene form -----------------------------------------------------------
   function mountSegment(): void {
     type = getSegmentType(segment.type);
     sceneSelect.value = type.id;
@@ -110,6 +233,7 @@ async function main(): Promise<void> {
         if (!valid) {
           compiled = null;
           timeSlider.disabled = true;
+          updateRecordButton();
           setStatus('Fix the highlighted fields.', true);
           return;
         }
@@ -154,6 +278,94 @@ async function main(): Promise<void> {
 
   mountSegment();
 
+  // ---- Output & quality settings -------------------------------------------
+  let settingsTimer: number | undefined;
+  const mountSettingsForm = (): FormHandle =>
+    renderForm(settingsForm, settingsFields, settingsParams, {
+      onChange(valid) {
+        settingsValid = valid;
+        if (!valid) {
+          setRecordStatus('Fix the highlighted settings.', true);
+          updateRecordButton();
+          return;
+        }
+        window.clearTimeout(settingsTimer);
+        settingsTimer = window.setTimeout(applyCurrentSettings, REBUILD_DEBOUNCE_MS);
+      },
+      onPick() {},
+    });
+  let settingsForm_ = mountSettingsForm();
+
+  function applyCurrentSettings(): void {
+    applyParams(settingsParams, settings);
+    settingsForm_.refresh(); // shows rounded (even) sizes
+    saveSettings(settings);
+    fitStage();
+    renderInfoLine();
+    setRecordStatus('');
+    updateRecordButton();
+  }
+
+  for (const preset of presets) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = preset.label;
+    button.addEventListener('click', () => {
+      settingsParams.width = preset.width;
+      settingsParams.height = preset.height;
+      settingsForm_.refresh();
+      settingsValid = true;
+      applyCurrentSettings();
+    });
+    presetsEl.append(button);
+  }
+
+  resetSettingsBtn.addEventListener('click', () => {
+    settingsParams = settingsToParams(defaultSettings);
+    settingsForm_.destroy();
+    settingsForm_ = mountSettingsForm();
+    settingsValid = true;
+    applyCurrentSettings();
+  });
+
+  function renderInfoLine(): void {
+    const { width, height, fps } = settings.video;
+    const lines: string[] = [];
+    const actual = internals.canvas;
+    if (actual && (actual.width !== width || actual.height !== height)) {
+      lines.push(`Rendering at ${actual.width}×${actual.height} (browser capped; output ${width}×${height} will be scaled)`);
+    } else {
+      lines.push(`Rendering at ${width}×${height}`);
+    }
+    if (compiled) {
+      const { frameCount } = planFrames(compiled.duration, fps);
+      lines.push(`${frameCount} frames at ${fps} fps · ~${formatDuration(frameCount * secondsPerFrame)} at ${secondsPerFrame.toFixed(2)} s/frame`);
+    }
+    renderInfo.textContent = lines.join('\n');
+  }
+
+  // ---- Recording support ----------------------------------------------------
+  const support = detectSupport();
+  let internalsSupport = { ok: false, reasons: ['Checking the map…'] };
+
+  function updateRecordButton(): void {
+    const ok = support.ok && internalsSupport.ok && settingsValid && compiled !== null && !recording;
+    recordBtn.disabled = !ok;
+    if (!recording) {
+      const reasons = [...support.reasons, ...internalsSupport.reasons];
+      if (reasons.length > 0) setRecordStatus(reasons.join(' '), !internalsSupport.ok && support.ok ? true : !support.ok);
+    }
+  }
+  updateRecordButton();
+
+  void detectInternals(INTERNALS_TIMEOUT_MS, () => viewport.whenSteady()).then((result) => {
+    internalsSupport = result;
+    if (result.ok) setRecordStatus('');
+    else console.warn(result.reasons.join(' '));
+    updateRecordButton();
+    renderInfoLine();
+  });
+
   // ---- Compiling ------------------------------------------------------------
   let rebuildTimer: number | undefined;
   let generation = 0;
@@ -168,6 +380,7 @@ async function main(): Promise<void> {
     // Keep the scrub position as a fraction so it survives duration changes.
     const fraction = compiled && compiled.duration > 0 ? Number(timeSlider.value) / compiled.duration : 0;
     timeSlider.disabled = true;
+    updateRecordButton();
     setStatus('Sampling ground…');
     try {
       const built = await compile(doc, { sampleGround });
@@ -179,6 +392,8 @@ async function main(): Promise<void> {
       timeSlider.disabled = false;
       showTime(Number(timeSlider.value));
       renderSummary();
+      renderInfoLine();
+      updateRecordButton();
       if (sampleGround.fallbackReason) setStatus(`Ready (with a caveat). ${sampleGround.fallbackReason}`, true);
       else setStatus('Ready.');
     } catch (err) {
@@ -186,6 +401,7 @@ async function main(): Promise<void> {
       compiled = null;
       summaryEl.textContent = '';
       timeLabel.textContent = '—';
+      updateRecordButton();
       setStatus(`Invalid scene: ${err instanceof Error ? err.message : String(err)}`, true);
     }
   }
@@ -229,8 +445,142 @@ async function main(): Promise<void> {
     showTime(Number(timeSlider.value));
   });
 
+  // ---- Recording ------------------------------------------------------------
+  const outCanvas = document.createElement('canvas');
+  const outCtx = outCanvas.getContext('2d')!;
+  outCtx.imageSmoothingQuality = 'high';
+  let abort: AbortController | null = null;
+
+  function setEditingEnabled(enabled: boolean): void {
+    form?.setEnabled(enabled);
+    settingsForm_.setEnabled(enabled);
+    for (const el of [sceneSelect, timeSlider, resetBtn, frameBtn, resetSettingsBtn]) el.disabled = !enabled;
+    for (const el of presetsEl.querySelectorAll('button')) el.disabled = !enabled;
+    stageShield.hidden = enabled;
+    viewport.setInteractive(enabled);
+    if (!enabled) setArmed(null);
+  }
+
+  cancelBtn.addEventListener('click', () => {
+    abort?.abort();
+    cancelBtn.disabled = true;
+    setRecordStatus('Cancelling…');
+  });
+
+  recordBtn.addEventListener('click', async () => {
+    if (!compiled || recording || recordBtn.disabled) return;
+    const scene = compiled;
+    const root = internals.root;
+    const mapCanvas = internals.canvas;
+    if (!root || !mapCanvas) return;
+
+    recording = true;
+    abort = new AbortController();
+    const signal = abort.signal;
+    recordBtn.hidden = true;
+    cancelBtn.hidden = false;
+    cancelBtn.disabled = false;
+    progressBar.hidden = false;
+    progressFill.style.width = '0%';
+    setEditingEnabled(false);
+    updateRecordButton();
+
+    const { width, height } = settings.video;
+    outCanvas.width = width;
+    outCanvas.height = height;
+    const year = new Date().getFullYear();
+    let lastProviders: string | null = null;
+    let lastLine = attributionLine('', year);
+    let attributionWarned = false;
+
+    const grab = () => {
+      outCtx.drawImage(mapCanvas, 0, 0, width, height);
+      const read = readAttribution(root);
+      if (!read && !attributionWarned) {
+        attributionWarned = true;
+        console.warn('Provider attribution not found in the map; only "Map data ©year Google" will be shown.');
+      }
+      const providers = read?.providers ?? '';
+      if (providers !== lastProviders) {
+        lastProviders = providers;
+        lastLine = attributionLine(providers, year);
+      }
+      drawAttribution(outCtx, width, height, logo, lastLine, settings.attribution.barHeight);
+    };
+
+    // Time hidden in the background is excluded from the ETA.
+    let hiddenSince: number | null = null;
+    let hiddenTotal = 0;
+    const onVisibility = () => {
+      if (document.hidden) {
+        hiddenSince = performance.now();
+        setRecordStatus('Paused: bring this tab to the front to continue.');
+      } else if (hiddenSince !== null) {
+        hiddenTotal += performance.now() - hiddenSince;
+        hiddenSince = null;
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    const now = () => performance.now() - hiddenTotal - (hiddenSince !== null ? performance.now() - hiddenSince : 0);
+
+    let encoder: Mp4Encoder | null = null;
+    const startedAt = performance.now();
+    try {
+      encoder = await Mp4Encoder.create(outCanvas, settings.video);
+      const enc = encoder;
+      const result = await recordFrames(
+        scene,
+        settings,
+        {
+          settle: (pose, s) =>
+            viewport.setPoseAndSettle(pose, { unsteadyGraceMs: UNSTEADY_GRACE_MS, timeoutMs: settings.steady.timeoutMs, signal: s }),
+          waitFrames,
+          grab,
+          addFrame: (i) => enc.addFrame(i),
+          now,
+        },
+        (p: RecordProgress) => {
+          progressFill.style.width = `${(p.frame / p.frameCount) * 100}%`;
+          if (document.hidden) return;
+          if (p.phase === 'warm-up') setRecordStatus('Warming up: loading the first view…');
+          else if (p.phase === 'recording') setRecordStatus(`Recording frame ${p.frame}/${p.frameCount}${formatEta(p.etaSeconds)}`);
+          else setRecordStatus('Finalizing MP4…');
+        },
+        signal,
+      );
+      const blob = await encoder.finalize();
+      encoder = null;
+      secondsPerFrame = Math.max(0.05, (performance.now() - startedAt - hiddenTotal) / 1000 / result.frameCount);
+      const filename = `${slug(doc.name)}.mp4`;
+      Object.assign(window, { lastRecording: blob });
+      downloadBlob(blob, filename);
+      const timeouts = result.steadyTimeouts > 0 ? `, ${result.steadyTimeouts} frames captured after a steady timeout` : '';
+      setRecordStatus(`Done — ${filename} (${(blob.size / 1e6).toFixed(1)} MB), ${result.frameCount} frames${timeouts}`);
+    } catch (err) {
+      if (err instanceof RecordingCancelled) {
+        setRecordStatus('Recording cancelled.');
+      } else {
+        console.error(err);
+        setRecordStatus(`Recording failed: ${err instanceof Error ? err.message : String(err)}`, true);
+      }
+    } finally {
+      document.removeEventListener('visibilitychange', onVisibility);
+      await encoder?.cancel().catch(() => {});
+      recording = false;
+      abort = null;
+      progressBar.hidden = true;
+      cancelBtn.hidden = true;
+      recordBtn.hidden = false;
+      setEditingEnabled(true);
+      timeSlider.disabled = compiled === null;
+      updateRecordButton();
+      renderInfoLine();
+      showTime(Number(timeSlider.value));
+    }
+  });
+
   // Debugging access from the browser console.
-  Object.assign(window, { viewport, doc });
+  Object.assign(window, { viewport, doc, settings, internals, readAttribution });
 
   await rebuild();
 }

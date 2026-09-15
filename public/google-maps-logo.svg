@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="360" height="60" viewBox="0 0 360 60">
+  <!-- Placeholder wordmark. Replace with the official Google Maps logo (white variant)
+       from the Google Maps Platform brand guidelines before distributing videos. -->
+  <path d="M30 4c-9.4 0-17 7.6-17 17 0 12.8 17 33 17 33s17-20.2 17-33c0-9.4-7.6-17-17-17zm0 23a6 6 0 1 1 0-12 6 6 0 0 1 0 12z" fill="#fff"/>
+  <text x="58" y="41" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif" font-size="34" font-weight="500" fill="#fff">Google Maps</text>
+</svg>

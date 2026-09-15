@@ -11,3 +11,7 @@ An app that allow to render and capture a scene using Google Earth.
   structure in advanced
 
 Read the attached directory contain a simple Cesium app that do the same but simpler.
+
+## Milestone 2
+
+- The app should contain a record button that convert the scene into a video

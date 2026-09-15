@@ -31,12 +31,29 @@ body {
   flex: 1 1 auto;
   min-height: 240px;
   background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
 }
-#viewport gmp-map-3d {
+/* The stage is laid out at output resolution / dpr and CSS-scaled to fit (see stage.ts). */
+#stage {
+  position: relative;
+  flex-shrink: 0;
+  transform-origin: center center;
+  background: #000;
+}
+#stage gmp-map-3d {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
+}
+#stageShield {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  cursor: progress;
 }
 .badge {
   position: absolute;
@@ -76,6 +93,85 @@ body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* ---- Record row -------------------------------------------------------- */
+#recordRow {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
+#recordBtn {
+  background: #b71c1c;
+  border-color: #b71c1c;
+  color: #fff;
+  font-weight: 600;
+  padding: 6px 14px;
+}
+#recordBtn:hover:not(:disabled) {
+  background: #d32f2f;
+}
+#cancelBtn {
+  font-weight: 600;
+}
+#progressBar {
+  flex: 0 0 180px;
+  height: 6px;
+  background: #333;
+  border-radius: 3px;
+  overflow: hidden;
+}
+#progressFill {
+  height: 100%;
+  width: 0;
+  background: #4caf50;
+  transition: width 0.2s;
+}
+#recordStatus {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#recordStatus.error {
+  color: var(--danger);
+  white-space: normal;
+}
+
+/* ---- Settings ---------------------------------------------------------- */
+details#settings {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px 10px;
+}
+details#settings summary {
+  cursor: pointer;
+  color: var(--muted);
+  user-select: none;
+}
+details#settings[open] summary {
+  margin-bottom: 8px;
+}
+#presets {
+  margin-bottom: 8px;
+}
+#presets button {
+  padding: 3px 8px;
+  font-size: 12px;
+}
+#renderInfo {
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-line;
 }
 
 /* ---- Controls ---------------------------------------------------------- */
